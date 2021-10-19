@@ -21,22 +21,25 @@ case class TastyFile(lib: Library, path: String, content: Array[Byte])
 case class TreeInfo(lib: Library, sourceFile: String, 
   method: String, treeKind: String, index: Int, depth: Int, topLevelType: Option[String])
 
-def loadTastyFiles(lib: Library): Seq[TastyFile] = 
+def loadTastyFiles(lib: Library): Either[String, Seq[TastyFile]] = 
   val orgPath = lib.org.split('.').mkString("/")
   val address = 
-    s"https://repo1.maven.org/maven2/$orgPath/${lib.name}_3/${lib.version}/${lib.name}_3-${lib.version}.jar"
-  val urlIs = URL(address).openStream();
-  try 
-    val zipIs = ZipInputStream(urlIs)
-    val tastyEntries = LazyList.continually(zipIs.getNextEntry).takeWhile(_ != null).filter(_.getName.endsWith(".tasty"))
-    val tastyFiles = tastyEntries.map { entry =>
-      val out = ByteArrayOutputStream()
-      val buffer = new Array[Byte](4096)
-      LazyList.continually(zipIs.read(buffer)).takeWhile(_ != -1).foreach(out.write(buffer, 0, _))
-      TastyFile(lib, entry.getName, out.toByteArray)
-    }
-    tastyFiles.toList
-  finally urlIs.close()
+    s"https://repo1.maven.org/maven2/$orgPath/${lib.name}/${lib.version}/${lib.name}-${lib.version}.jar"
+  try
+    val urlIs = URL(address).openStream();
+    try 
+      val zipIs = ZipInputStream(urlIs)
+      val tastyEntries = LazyList.continually(zipIs.getNextEntry).takeWhile(_ != null).filter(_.getName.endsWith(".tasty"))
+      val tastyFiles = tastyEntries.map { entry =>
+        val out = ByteArrayOutputStream()
+        val buffer = new Array[Byte](4096)
+        LazyList.continually(zipIs.read(buffer)).takeWhile(_ != -1).foreach(out.write(buffer, 0, _))
+        TastyFile(lib, entry.getName, out.toByteArray)
+      }
+      Right(tastyFiles.toList)
+    finally urlIs.close()
+  catch
+    case e: java.io.FileNotFoundException => Left(s"Artifact not present: $address")
 
 
 def printType(tpe: Type): String = tpe match
@@ -100,8 +103,13 @@ def processTastyFile(tastyFile: TastyFile): Either[String, Seq[TreeInfo]] =
 @main def typesFrom(args: String*) = args match
   case Seq(org, name, version) =>
     val lib = Library(org, name, version)
-    val (failed, tastyFiles) = loadTastyFiles(lib).map(processTastyFile).partitionMap(identity)
+    val (failed, tastyFiles) = 
+      val tastyFiles = loadTastyFiles(lib)
+      tastyFiles.left.foreach(println)
+      tastyFiles.fold(_ => Nil, identity).map(processTastyFile)
+        .partitionMap(identity)
     failed.foreach(println)
+    tastyFiles.flatten.take(10).foreach(println)
     val mostPopularTypes =  
       tastyFiles
         .flatten
@@ -110,7 +118,23 @@ def processTastyFile(tastyFile: TastyFile): Either[String, Seq[TreeInfo]] =
         .collect { case (Some(tpe), instances) => (tpe, instances.size) }
         .sortBy(-_._2)
         .take(10)
+    import scala.util.chaining._
+    val librarySizes =
+      tastyFiles
+        .flatten
+        .groupBy(_.lib)
+        .toSeq
+        .map {
+          case (lib, infos) => (s"${lib.org}:${lib.name}:${lib.version}", infos.size)
+        }
+        .sortBy(_(1))
+        .reverse
 
+    println("\nAmount of treeinfos per library:")
+    librarySizes.foreach {
+      case (lib, size) => println(s"$lib: $size")
+    }
+    println("\nMost popular types:")
     println(mostPopularTypes.map{ case (name, count) => s"$name : $count"}.mkString("\n"))
   case other =>
         println(s"Expected <organization> <name> <version> but got ${args.mkString(" ")}") 
