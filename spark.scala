@@ -1,9 +1,8 @@
 // using scala 3.0.2
-// using org.apache.spark:spark-core_2.13:3.2.0
-// using org.apache.spark:spark-sql_2.13:3.2.0
+// using lib org.apache.spark:spark-sql_2.13:3.2.0
 
 // using repository https://wip-repos.s3.eu-central-1.amazonaws.com/.release
-// using io.github.vincenzobaz::spark-scala3:0.1.3-new-spark
+// using lib io.github.vincenzobaz::spark-scala3:0.1.3-new-spark
 
 import scala3encoders.given
 

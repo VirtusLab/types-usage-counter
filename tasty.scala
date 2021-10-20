@@ -1,5 +1,5 @@
 // using repository https://wip-repos.s3.eu-central-1.amazonaws.com/.release
-// using tasty-query::tasty-query:0.0.2-spark
+// using lib tasty-query::tasty-query:0.0.2-spark
 
 import java.io.File
 
@@ -23,17 +23,19 @@ import java.io.InputStream
 case class Library(org: String, name: String, version: String):
   def moduleString = s"$org:${name.stripSuffix("_3")}"
 
+// path is relative to the jar, e.g. 'foo/Bar.tasty' for a `foo.Bar` class
 case class TastyFile(lib: Library, path: String, content: Array[Byte])
 case class TreeInfo(
     lib: Library,
-    sourceFile: String,
-    method: String,
-    treeKind: String,
-    index: Int,
-    depth: Int,
-    topLevelType: Option[String]
+    sourceFile: String, // path to tasty file
+    method: String, // name of top level method, class, object etc. that contains that tree
+    treeKind: String, // type of the tree, e.g. Select or Apply
+    index: Int, // index from the top of the tree
+    depth: Int, // how much given tree is nested
+    topLevelType: Option[String] // top level type, excluding generic, e.g. Option[List[Int]] becomes just scala.Option
 )
 
+// Loads library from maven central and exposed input stream
 def loadLibrary(lib: Library): Either[String, InputStream] =
   val orgPath = lib.org.split('.').mkString("/")
   val repo = "https://repo1.maven.org/maven2"
@@ -44,6 +46,8 @@ def loadLibrary(lib: Library): Either[String, InputStream] =
     case e: java.io.FileNotFoundException =>
       Left(s"Artifact not present: $address")
 
+// Load given library jar and extract tasty files to case classes
+// Works in memory
 def loadTastyFiles(lib: Library): Either[String, Seq[TastyFile]] =
   loadLibrary(lib).flatMap { urlIs =>
     try
